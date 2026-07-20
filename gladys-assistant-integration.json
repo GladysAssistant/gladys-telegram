@@ -6,16 +6,21 @@
     "en": "Chat with Gladys from Telegram: ask about your home and receive your notifications.",
     "fr": "Discutez avec Gladys depuis Telegram : interrogez votre maison et recevez vos notifications."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/gladys-telegram:1.0.0",
+  "version": "1.0.1",
+  "docker_image": "ghcr.io/gladysassistant/gladys-telegram:1.0.1",
   "gladys_version": ">=4.84.0",
   "cover_image": "https://raw.githubusercontent.com/GladysAssistant/gladys-telegram/main/cover.jpg",
-  "transports": ["cloud"],
+  "transports": [
+    "cloud"
+  ],
   "config_schema": [
     {
       "key": "telegram_api_token",
       "type": "secret",
-      "label": { "en": "Telegram bot token", "fr": "Token du bot Telegram" },
+      "label": {
+        "en": "Telegram bot token",
+        "fr": "Token du bot Telegram"
+      },
       "description": {
         "en": "Create a bot with @BotFather on Telegram (/newbot) and paste the token it gives you here.",
         "fr": "Créez un bot avec @BotFather sur Telegram (/newbot) et collez ici le token qu'il vous donne."
@@ -26,7 +31,10 @@
   "actions": [
     {
       "key": "test_connection",
-      "label": { "en": "Test the bot token", "fr": "Tester le token du bot" },
+      "label": {
+        "en": "Test the bot token",
+        "fr": "Tester le token du bot"
+      },
       "description": {
         "en": "Checks that the configured token is valid and shows the bot username.",
         "fr": "Vérifie que le token configuré est valide et affiche le nom du bot."

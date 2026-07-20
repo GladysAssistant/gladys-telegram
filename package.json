@@ -1,6 +1,6 @@
 {
   "name": "gladys-telegram",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Official Telegram external integration for Gladys Assistant: chat with your home from Telegram.",
   "type": "module",
