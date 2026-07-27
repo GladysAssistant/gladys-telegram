@@ -8,7 +8,7 @@
   },
   "version": "1.0.2",
   "docker_image": "ghcr.io/gladysassistant/gladys-telegram:1.0.2",
-  "gladys_version": ">=4.84.0",
+  "gladys_version": ">=4.83.0",
   "cover_image": "https://raw.githubusercontent.com/GladysAssistant/gladys-telegram/main/cover.jpg",
   "messaging": {
     "receive": true
