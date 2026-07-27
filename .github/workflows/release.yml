@@ -48,6 +48,11 @@ jobs:
         with:
           node-version: 24
 
+      # Needed to re-format the manifest with the repository's pinned Prettier
+      # after the jq rewrite below.
+      - name: Install dependencies
+        run: npm ci
+
       - name: Bump version and update the manifest
         id: bump
         env:
@@ -70,6 +75,11 @@ jobs:
             '.version = $version | .docker_image = $image' \
             gladys-assistant-integration.json > "$tmp"
           mv "$tmp" gladys-assistant-integration.json
+
+          # jq re-prints the whole file with its own style, which is not
+          # Prettier's: without this, the release commit lands on main with an
+          # unformatted manifest and the next CI run fails on `format:check`.
+          npx prettier --write gladys-assistant-integration.json
 
           echo "version=${new_version}" >> "$GITHUB_OUTPUT"
 
