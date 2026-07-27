@@ -5,10 +5,11 @@ Official **Telegram** external integration for
 Telegram — ask about your house, trigger scenes, and receive your Gladys
 notifications (camera images included) in your Telegram account.
 
-This is a **communication** integration (manifest `type: "communication"`),
-built with the JavaScript SDK
+This is a **communication** integration (manifest `type: "communication"` +
+`"messaging": { "receive": true }`, i.e. a bidirectional chat channel of
+contract B.15), built with the JavaScript SDK
 [`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js)
-(v0.6.0+). It is the port of the historical in-core Telegram service of Gladys
+(v0.9.0+). It is the port of the historical in-core Telegram service of Gladys
 (`server/services/telegram`) to the external integration model: same
 `node-telegram-bot-api` long polling, same message flows — but running in its
 own supervised Docker container.
@@ -36,7 +37,7 @@ ignored.
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Incoming  | Telegram long polling → `gladys.publishMessage(contactId, text)` → brain + chat history. Unknown contact (404) → linking instructions reply |
 | Linking   | Code sent in the chat → `gladys.linkContact(code, contactId, contactName)` → confirmation in the language of the linked user                |
-| Outgoing  | `gladys.onSendMessage` → `bot.sendMessage` (+ `bot.sendPhoto` when the message carries an image)                                            |
+| Outgoing  | `gladys.onSendMessage(contact, message)` → `bot.sendMessage(contact.id, …)` (+ `bot.sendPhoto` when the message carries an image)           |
 
 ## Project structure
 
@@ -48,6 +49,9 @@ ignored.
 │  ├─ messages.js                    # texts sent by the bot in the channel (en/fr)
 │  ├─ config.js                      # config defaults + normalization
 │  └─ env.js                         # node-telegram-bot-api env fixes (loaded first)
+├─ docs/
+│  ├─ en.md                          # user documentation (mandatory, re-hosted by
+│  └─ fr.md                          #   the store, linked from the Configuration screen)
 ├─ gladys-assistant-integration.json # manifest (type: communication, config schema…)
 ├─ test/                             # node --test unit tests (fake bot + fake Gladys)
 ├─ Dockerfile                        # Node 24 Alpine, read-only rootfs ready
@@ -62,6 +66,14 @@ npm install
 npm test              # node:test unit tests (fake bot, fake Gladys — no network)
 npm run lint          # ESLint 10, flat config
 npm run format:check  # Prettier
+```
+
+Before releasing, replay the store admission checks locally (manifest schema +
+code rules, mandatory `docs/en.md` / `docs/fr.md`, Docker image existence,
+cover contract):
+
+```bash
+npx github:GladysAssistant/integration-store .
 ```
 
 To run the integration against a Gladys instance outside Docker, export the
