@@ -148,6 +148,48 @@ test('sendMessage delivers the text, and the image when there is one', async () 
   assert.equal(bot.sentPhotos[0].fileOptions.contentType, 'image/jpg');
 });
 
+test('sendMessage renders the markdown into Telegram HTML', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  await handler.connect('token');
+
+  await handler.sendMessage('1234', { text: 'It is **27 °C** in the living room.', file: null });
+
+  const sent = FakeTelegramBot.last.sentMessages[0];
+  assert.equal(sent.text, 'It is <b>27 °C</b> in the living room.');
+  assert.equal(sent.options.parse_mode, 'HTML');
+});
+
+test('sendMessage falls back to plain text when Telegram refuses the formatting', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  await handler.connect('token');
+  const bot = FakeTelegramBot.last;
+  const recordMessage = bot.sendMessage.bind(bot);
+  bot.sendMessage = async (chatId, text, options) => {
+    if (options?.parse_mode) {
+      throw new Error("ETELEGRAM: 400 Bad Request: can't parse entities");
+    }
+    return recordMessage(chatId, text, options);
+  };
+
+  await handler.sendMessage('1234', { text: 'It is **27 °C**.', file: null });
+
+  assert.equal(bot.sentMessages.length, 1);
+  assert.equal(bot.sentMessages[0].text, 'It is **27 °C**.');
+  assert.equal(bot.sentMessages[0].options, undefined);
+});
+
+test('sendMessage sends no text message when the message carries only an image', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  await handler.connect('token');
+  const pixel = Buffer.from('fake-jpeg-bytes').toString('base64');
+
+  await handler.sendMessage('1234', { text: '', file: `image/jpg;base64,${pixel}` });
+
+  const bot = FakeTelegramBot.last;
+  assert.equal(bot.sentMessages.length, 0);
+  assert.equal(bot.sentPhotos.length, 1);
+});
+
 test('sendMessage throws when the bot is not connected', async () => {
   const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
   await assert.rejects(
