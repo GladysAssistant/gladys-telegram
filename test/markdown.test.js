@@ -87,6 +87,32 @@ test('headings become bold', () => {
   assert.equal(markdownToTelegramHtml('# Titre #'), '<b>Titre</b>');
 });
 
+test('a heading keeps a trailing # that is part of the text', () => {
+  assert.equal(markdownToTelegramHtml('# Learning C#'), '<b>Learning C#</b>');
+});
+
+test('the emphasis rules never rewrite the inside of an url', () => {
+  assert.equal(
+    markdownToTelegramHtml('[x](https://example.com/*rare*)'),
+    '<a href="https://example.com/*rare*">x</a>',
+  );
+  assert.equal(
+    markdownToTelegramHtml('[x](https://example.com/a/_priv_/b)'),
+    '<a href="https://example.com/a/_priv_/b">x</a>',
+  );
+});
+
+test('a link label keeps its own formatting', () => {
+  assert.equal(
+    markdownToTelegramHtml('[**bold**](https://example.com)'),
+    '<a href="https://example.com"><b>bold</b></a>',
+  );
+  assert.equal(
+    markdownToTelegramHtml('[`code`](https://example.com)'),
+    '<a href="https://example.com"><code>code</code></a>',
+  );
+});
+
 test('unordered lists become bullets', () => {
   assert.equal(
     markdownToTelegramHtml('- Salon\n* Cuisine\n+ Chambre'),

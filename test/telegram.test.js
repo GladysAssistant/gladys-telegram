@@ -159,23 +159,66 @@ test('sendMessage renders the markdown into Telegram HTML', async () => {
   assert.equal(sent.options.parse_mode, 'HTML');
 });
 
+// the error shape of node-telegram-bot-api: `code`, plus the raw Telegram
+// answer under `response.body`
+function telegramError(errorCode, description) {
+  const error = new Error(`ETELEGRAM: ${errorCode} ${description}`);
+  error.code = 'ETELEGRAM';
+  error.response = { body: { ok: false, error_code: errorCode, description } };
+  return error;
+}
+
+function failFormattedSend(bot, error) {
+  const recordMessage = bot.sendMessage.bind(bot);
+  bot.sendMessage = async (chatId, text, options) => {
+    if (options?.parse_mode) {
+      throw error;
+    }
+    return recordMessage(chatId, text, options);
+  };
+}
+
 test('sendMessage falls back to plain text when Telegram refuses the formatting', async () => {
   const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
   await handler.connect('token');
   const bot = FakeTelegramBot.last;
-  const recordMessage = bot.sendMessage.bind(bot);
-  bot.sendMessage = async (chatId, text, options) => {
-    if (options?.parse_mode) {
-      throw new Error("ETELEGRAM: 400 Bad Request: can't parse entities");
-    }
-    return recordMessage(chatId, text, options);
-  };
+  failFormattedSend(bot, telegramError(400, "Bad Request: can't parse entities"));
 
   await handler.sendMessage('1234', { text: 'It is **27 °C**.', file: null });
 
   assert.equal(bot.sentMessages.length, 1);
   assert.equal(bot.sentMessages[0].text, 'It is **27 °C**.');
   assert.equal(bot.sentMessages[0].options, undefined);
+});
+
+test('sendMessage does not retry a send that failed for another reason', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  await handler.connect('token');
+  const bot = FakeTelegramBot.last;
+  // a network failure may well have delivered the message: retrying it would
+  // send it twice
+  const networkError = new Error('EFATAL: network is down');
+  networkError.code = 'EFATAL';
+  failFormattedSend(bot, networkError);
+
+  await assert.rejects(
+    () => handler.sendMessage('1234', { text: 'It is **27 °C**.', file: null }),
+    /network is down/,
+  );
+  assert.equal(bot.sentMessages.length, 0);
+});
+
+test('sendMessage does not retry when the contact blocked the bot', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  await handler.connect('token');
+  const bot = FakeTelegramBot.last;
+  failFormattedSend(bot, telegramError(403, 'Forbidden: bot was blocked by the user'));
+
+  await assert.rejects(
+    () => handler.sendMessage('1234', { text: 'Hello', file: null }),
+    /blocked by the user/,
+  );
+  assert.equal(bot.sentMessages.length, 0);
 });
 
 test('sendMessage sends no text message when the message carries only an image', async () => {

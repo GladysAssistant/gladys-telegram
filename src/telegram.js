@@ -32,6 +32,19 @@ const LINK_CODE_REGEX = /^[abcdefghjkmnpqrstuvwxyz23456789]{8}$/i;
 // Telegram wants the raw bytes.
 const BASE64_IMAGE_PREFIX_REGEX = /^image\/[a-z]+;base64,/;
 
+/**
+ * Whether Telegram itself rejected the request (400 Bad Request), which is
+ * what a message carrying a tag it dislikes looks like. Only those are worth
+ * retrying without formatting: a 400 means nothing was delivered, whereas a
+ * network failure could have been a message that actually went through, and
+ * re-sending it would duplicate it.
+ * @param {Error} e - The error thrown by node-telegram-bot-api.
+ * @returns {boolean} True when the request was rejected by Telegram.
+ */
+function isRejectedByTelegram(e) {
+  return e?.code === 'ETELEGRAM' && e?.response?.body?.error_code === 400;
+}
+
 export class TelegramHandler {
   /**
    * @param {object} gladys - The GladysIntegration instance.
@@ -200,6 +213,9 @@ export class TelegramHandler {
       } catch (e) {
         // Telegram rejects the whole message when it dislikes one tag: rather
         // than losing the answer, send the raw text without any formatting
+        if (!isRejectedByTelegram(e)) {
+          throw e;
+        }
         logger.warn('Telegram refused the formatted message, falling back to plain text', e);
         await this.bot.sendMessage(contactId, message.text);
       }
