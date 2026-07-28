@@ -19,6 +19,7 @@
 
 import { createLogger } from '@gladysassistant/integration-sdk';
 import { linkedMessage, notLinkedMessage, invalidCodeMessage } from './messages.js';
+import { markdownToTelegramHtml } from './markdown.js';
 
 const logger = createLogger({ name: 'telegram' });
 
@@ -30,6 +31,19 @@ const LINK_CODE_REGEX = /^[abcdefghjkmnpqrstuvwxyz23456789]{8}$/i;
 // Outgoing images arrive as `image/jpg;base64,....` (or another subtype):
 // Telegram wants the raw bytes.
 const BASE64_IMAGE_PREFIX_REGEX = /^image\/[a-z]+;base64,/;
+
+/**
+ * Whether Telegram itself rejected the request (400 Bad Request), which is
+ * what a message carrying a tag it dislikes looks like. Only those are worth
+ * retrying without formatting: a 400 means nothing was delivered, whereas a
+ * network failure could have been a message that actually went through, and
+ * re-sending it would duplicate it.
+ * @param {Error} e - The error thrown by node-telegram-bot-api.
+ * @returns {boolean} True when the request was rejected by Telegram.
+ */
+function isRejectedByTelegram(e) {
+  return e?.code === 'ETELEGRAM' && e?.response?.body?.error_code === 400;
+}
 
 export class TelegramHandler {
   /**
@@ -180,7 +194,9 @@ export class TelegramHandler {
 
   /**
    * Deliver a Gladys message (brain reply or forwarded notification) to a
-   * Telegram contact.
+   * Telegram contact. `message.text` is Markdown (contract of `message.send`):
+   * it is rendered into the HTML subset Telegram understands, otherwise the
+   * user reads the raw syntax ("**27 °C**").
    * @param {string} contactId - The Telegram chat id.
    * @param {{ text: string, file: string | null }} message - The message.
    */
@@ -189,7 +205,21 @@ export class TelegramHandler {
       throw new Error('Telegram bot is not connected');
     }
     logger.debug(`Sending Telegram message to contact ${contactId}`);
-    await this.bot.sendMessage(contactId, message.text);
+    if (message.text) {
+      try {
+        await this.bot.sendMessage(contactId, markdownToTelegramHtml(message.text), {
+          parse_mode: 'HTML',
+        });
+      } catch (e) {
+        // Telegram rejects the whole message when it dislikes one tag: rather
+        // than losing the answer, send the raw text without any formatting
+        if (!isRejectedByTelegram(e)) {
+          throw e;
+        }
+        logger.warn('Telegram refused the formatted message, falling back to plain text', e);
+        await this.bot.sendMessage(contactId, message.text);
+      }
+    }
     if (message.file) {
       const image = Buffer.from(message.file.replace(BASE64_IMAGE_PREFIX_REGEX, ''), 'base64');
       await this.bot.sendPhoto(
