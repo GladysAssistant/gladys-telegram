@@ -56,3 +56,27 @@ test('the manifest version matches the docker image tag', () => {
     `docker_image "${manifest.docker_image}" must be tagged with the manifest version`,
   );
 });
+
+test('the config_schema sections follow the rules Gladys enforces', () => {
+  // A section breaking these rules rejects the whole manifest (indexer and
+  // server): en label, plain-text description ≤ 1000 characters per
+  // language, ≤ 5 https links, and none of the value-related properties.
+  for (const field of (manifest.config_schema ?? []).filter((f) => f.type === 'section')) {
+    assert.equal(typeof field.label?.en, 'string', `section "${field.key}" needs an en label`);
+    for (const text of Object.values(field.description ?? {})) {
+      assert.ok(text.length <= 1000, `section "${field.key}" description is too long`);
+    }
+    for (const property of ['required', 'default', 'placeholder']) {
+      assert.ok(!(property in field), `section "${field.key}" must not declare "${property}"`);
+    }
+    assert.ok((field.links ?? []).length <= 5, `section "${field.key}" has more than 5 links`);
+    for (const link of field.links ?? []) {
+      assert.match(link.url, /^https:\/\//, `section "${field.key}" link must be https`);
+      assert.equal(
+        typeof link.label?.en,
+        'string',
+        `section "${field.key}" link needs an en label`,
+      );
+    }
+  }
+});
