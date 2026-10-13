@@ -9,7 +9,7 @@ This is a **communication** integration (manifest `type: "communication"` +
 `"messaging": { "receive": true }`, i.e. a bidirectional chat channel of
 contract B.15), built with the JavaScript SDK
 [`@gladysassistant/integration-sdk`](https://github.com/GladysAssistant/integration-sdk-js)
-(v0.9.0+). It is the port of the historical in-core Telegram service of Gladys
+(v0.15.0+). It is the port of the historical in-core Telegram service of Gladys
 (`server/services/telegram`) to the external integration model: same
 `node-telegram-bot-api` long polling, same message flows — but running in its
 own supervised Docker container.
