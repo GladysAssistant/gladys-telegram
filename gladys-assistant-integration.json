@@ -23,8 +23,8 @@
         "fr": "Créez votre bot Telegram"
       },
       "description": {
-        "en": "1. In Telegram, open a chat with @BotFather and send /newbot. 2. Choose a name and a username for your bot (the username must end with \"bot\"). 3. BotFather replies with a token: paste it below and save. 4. Then click \"Link my account\" and send the code you get to your bot.",
-        "fr": "1. Dans Telegram, ouvrez une discussion avec @BotFather et envoyez /newbot. 2. Choisissez un nom et un identifiant pour votre bot (l'identifiant doit se terminer par « bot »). 3. BotFather vous répond avec un token : collez-le ci-dessous et enregistrez. 4. Cliquez ensuite sur « Lier mon compte » et envoyez le code obtenu à votre bot."
+        "en": "1. In Telegram, open a chat with @BotFather and send /newbot.\n2. Choose a name and a username for your bot (the username must end with \"bot\").\n3. BotFather replies with a token: paste it below and save.\n4. In the \"Link my account\" card, click \"Generate a link code\" and send the code to your bot.",
+        "fr": "1. Dans Telegram, ouvrez une discussion avec @BotFather et envoyez /newbot.\n2. Choisissez un nom et un identifiant pour votre bot (l'identifiant doit se terminer par « bot »).\n3. BotFather vous répond avec un token : collez-le ci-dessous et enregistrez.\n4. Dans la carte « Lier mon compte », cliquez sur « Générer un code de liaison » et envoyez le code à votre bot."
       },
       "links": [
         {
