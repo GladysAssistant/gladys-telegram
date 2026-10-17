@@ -60,7 +60,7 @@ async function startFromConfig(rawConfig) {
 // Brain replies and notifications forwarded to a linked user. Throwing acks
 // the command as failed, so Gladys knows the message was not delivered.
 //
-// `contact` is the identity resolved by Gladys (SDK v0.9): for a bidirectional
+// `contact` is the identity resolved by Gladys (SDK v0.9+): for a bidirectional
 // channel like this one (`messaging.receive: true`), it carries the linked
 // contact id — here the Telegram chat id. Send-only channels would receive
 // their `contact_schema` values instead.

@@ -56,3 +56,64 @@ test('the manifest version matches the docker image tag', () => {
     `docker_image "${manifest.docker_image}" must be tagged with the manifest version`,
   );
 });
+
+test('the config_schema sections follow the rules Gladys enforces', () => {
+  // A section breaking these rules rejects the whole manifest (indexer and
+  // server): only the known config field keys, en label, plain-text
+  // description of 1-1000 characters per language, 1-5 https links made of
+  // url + label only, and none of the value-related properties.
+  // Mirrors CONFIG_FIELD_FIELDS / SECTION_LINK_FIELDS of the core validator.
+  const configFieldKeys = [
+    'key',
+    'type',
+    'label',
+    'description',
+    'placeholder',
+    'required',
+    'default',
+    'min',
+    'max',
+    'options',
+    'source',
+    'display',
+    'links',
+  ];
+  for (const field of (manifest.config_schema ?? []).filter((f) => f.type === 'section')) {
+    for (const property of Object.keys(field)) {
+      assert.ok(
+        configFieldKeys.includes(property),
+        `section "${field.key}" has an unknown key "${property}"`,
+      );
+    }
+    assert.equal(typeof field.label?.en, 'string', `section "${field.key}" needs an en label`);
+    for (const text of Object.values(field.description ?? {})) {
+      assert.ok(
+        text.length >= 1 && text.length <= 1000,
+        `section "${field.key}" description must be 1-1000 characters`,
+      );
+    }
+    for (const property of ['required', 'default', 'placeholder']) {
+      assert.ok(!(property in field), `section "${field.key}" must not declare "${property}"`);
+    }
+    if (field.links !== undefined) {
+      assert.ok(
+        Array.isArray(field.links) && field.links.length >= 1 && field.links.length <= 5,
+        `section "${field.key}" links must be a list of 1-5 links`,
+      );
+    }
+    for (const link of field.links ?? []) {
+      for (const property of Object.keys(link)) {
+        assert.ok(
+          ['url', 'label'].includes(property),
+          `section "${field.key}" link has an unknown key "${property}"`,
+        );
+      }
+      assert.match(link.url, /^https:\/\//, `section "${field.key}" link must be https`);
+      assert.equal(
+        typeof link.label?.en,
+        'string',
+        `section "${field.key}" link needs an en label`,
+      );
+    }
+  }
+});

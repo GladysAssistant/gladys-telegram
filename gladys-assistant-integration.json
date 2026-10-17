@@ -16,6 +16,34 @@
   "transports": ["cloud"],
   "config_schema": [
     {
+      "key": "getting_started",
+      "type": "section",
+      "label": {
+        "en": "Create your Telegram bot",
+        "fr": "Créez votre bot Telegram"
+      },
+      "description": {
+        "en": "1. In Telegram, open a chat with @BotFather and send /newbot.\n2. Choose a name and a username for your bot (the username must end with \"bot\").\n3. BotFather replies with a token: paste it below and save.\n4. In the \"Link my account\" card, click \"Generate a link code\" and send the code to your bot.",
+        "fr": "1. Dans Telegram, ouvrez une discussion avec @BotFather et envoyez /newbot.\n2. Choisissez un nom et un identifiant pour votre bot (l'identifiant doit se terminer par « bot »).\n3. BotFather vous répond avec un token : collez-le ci-dessous et enregistrez.\n4. Dans la carte « Lier mon compte », cliquez sur « Générer un code de liaison » et envoyez le code à votre bot."
+      },
+      "links": [
+        {
+          "url": "https://t.me/BotFather",
+          "label": {
+            "en": "Open @BotFather",
+            "fr": "Ouvrir @BotFather"
+          }
+        },
+        {
+          "url": "https://core.telegram.org/bots/tutorial#obtain-your-bot-token",
+          "label": {
+            "en": "Telegram guide: get a bot token",
+            "fr": "Guide Telegram : obtenir un token de bot"
+          }
+        }
+      ]
+    },
+    {
       "key": "telegram_api_token",
       "type": "secret",
       "label": {
@@ -23,8 +51,8 @@
         "fr": "Token du bot Telegram"
       },
       "description": {
-        "en": "Create a bot with @BotFather on Telegram (/newbot) and paste the token it gives you here.",
-        "fr": "Créez un bot avec @BotFather sur Telegram (/newbot) et collez ici le token qu'il vous donne."
+        "en": "The token given by @BotFather, shaped like 123456789:AAH…",
+        "fr": "Le token donné par @BotFather, de la forme 123456789:AAH…"
       },
       "required": true
     }
