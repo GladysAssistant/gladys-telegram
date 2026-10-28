@@ -45,6 +45,17 @@ function isRejectedByTelegram(e) {
   return e?.code === 'ETELEGRAM' && e?.response?.body?.error_code === 400;
 }
 
+/**
+ * Whether Telegram refused the bot token itself: 401 = invalid token, 404 =
+ * revoked bot. Anything else (network down, DNS, Telegram 5xx/429) says
+ * nothing about the token.
+ * @param {Error} e - The error thrown or emitted by node-telegram-bot-api.
+ * @returns {boolean} True when the token is rejected.
+ */
+export function isTokenRejected(e) {
+  return e?.code === 'ETELEGRAM' && /: (401|404) /.test(e?.message);
+}
+
 export class TelegramHandler {
   /**
    * @param {object} gladys - The GladysIntegration instance.
@@ -79,7 +90,7 @@ export class TelegramHandler {
       logger.warn(`Telegram polling error, code = ${e.code}, message = ${e.message}`);
       // 401 = invalid token, 404 = revoked bot: polling can never succeed
       // again, stop hammering the API and surface the problem in the UI.
-      if (e.code === 'ETELEGRAM' && /: (401|404) /.test(e.message)) {
+      if (isTokenRejected(e)) {
         await this.disconnect();
         await this.gladys
           .setConnectionStatus(false, {
@@ -112,6 +123,18 @@ export class TelegramHandler {
       throw new Error('Telegram bot is not connected');
     }
     const me = await this.bot.getMe();
+    return me.username;
+  }
+
+  /**
+   * Check a token against the Telegram API without touching the running bot:
+   * the check uses its own client, with no polling loop.
+   * @param {string} token - The Telegram bot token to check.
+   * @returns {Promise<string>} The username of the bot (without @).
+   */
+  async checkToken(token) {
+    const bot = new this.TelegramBotApi(token, { polling: false });
+    const me = await bot.getMe();
     return me.username;
   }
 

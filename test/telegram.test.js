@@ -1,6 +1,6 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { TelegramHandler } from '../src/telegram.js';
+import { TelegramHandler, isTokenRejected } from '../src/telegram.js';
 import { createFakeGladys } from './helpers/fakeGladys.js';
 import { FakeTelegramBot } from './helpers/fakeBot.js';
 
@@ -272,4 +272,42 @@ test('a transient polling error keeps the bot running', async () => {
   assert.equal(bot.polling, true);
   assert.equal(handler.bot, bot);
   assert.equal(gladys.connectionStatuses.length, 0);
+});
+
+test('isTokenRejected only matches an invalid token or a revoked bot', () => {
+  assert.equal(isTokenRejected(telegramError(401, 'Unauthorized')), true);
+  assert.equal(isTokenRejected(telegramError(404, 'Not Found')), true);
+  assert.equal(isTokenRejected(telegramError(429, 'Too Many Requests')), false);
+  assert.equal(isTokenRejected(telegramError(502, 'Bad Gateway')), false);
+  const networkError = new Error('EFATAL: getaddrinfo ENOTFOUND api.telegram.org');
+  networkError.code = 'EFATAL';
+  assert.equal(isTokenRejected(networkError), false);
+  assert.equal(isTokenRejected(undefined), false);
+});
+
+test('checkToken uses its own client and leaves the running bot alone', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  await handler.connect('token-a');
+  const runningBot = FakeTelegramBot.last;
+
+  const username = await handler.checkToken('token-a');
+
+  assert.equal(username, 'GladysTestBot');
+  assert.equal(FakeTelegramBot.instances.length, 2);
+  assert.equal(FakeTelegramBot.last.options.polling, false);
+  assert.equal(handler.bot, runningBot);
+  assert.equal(runningBot.polling, true);
+});
+
+test('checkToken with a rejected token neither starts nor stops a bot', async () => {
+  class RejectingBot extends FakeTelegramBot {
+    async getMe() {
+      throw telegramError(401, 'Unauthorized');
+    }
+  }
+  const handler = new TelegramHandler(createFakeGladys(), RejectingBot);
+
+  await assert.rejects(() => handler.checkToken('bad-token'), /401/);
+  assert.equal(handler.bot, null);
+  assert.equal(FakeTelegramBot.last.options.polling, false);
 });

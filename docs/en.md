@@ -83,6 +83,12 @@ revoked, or bot deleted), and the integration stops polling. Generate a new
 token with `/token` in `@BotFather`, paste it and save: the bot restarts with
 the new token.
 
+**"Cannot reach Telegram right now".** Gladys could not reach the Telegram
+servers (internet or DNS down, Telegram unavailable), so the token was not
+checked. The token is kept and the integration checks again every minute: the
+status turns green on its own once Telegram is reachable. Do not generate a new
+token for this; check the internet connection of the Gladys host instead.
+
 **"Your Telegram account is not linked yet".** The message means the bot does
 not know your Telegram account: generate a fresh code from Gladys and send it
 to the bot. Codes expire after 15 minutes and only work once.

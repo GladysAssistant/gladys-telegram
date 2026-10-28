@@ -87,6 +87,13 @@ recopié, révoqué, ou bot supprimé) et l'intégration cesse d'interroger
 Telegram. Générez un nouveau token avec `/token` dans `@BotFather`, collez-le
 et enregistrez : le bot redémarre avec le nouveau token.
 
+**« Impossible de joindre Telegram pour le moment ».** Gladys n'a pas réussi à
+joindre les serveurs de Telegram (internet ou DNS coupé, Telegram indisponible),
+le token n'a donc pas pu être vérifié. Le token est conservé et l'intégration
+réessaie chaque minute : l'état repasse au vert tout seul dès que Telegram est
+joignable. Inutile de générer un nouveau token : vérifiez plutôt la connexion
+internet de la machine qui fait tourner Gladys.
+
 **« Votre compte Telegram n'est pas encore lié ».** Ce message signifie que le
 bot ne connaît pas votre compte Telegram : générez un nouveau code depuis
 Gladys et envoyez-le au bot. Les codes expirent au bout de 15 minutes et ne
