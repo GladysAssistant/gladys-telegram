@@ -234,25 +234,112 @@ test('sendMessage sends no text message when the message carries only an image',
 });
 
 test('sendMessage waits for the first start of the bot', async () => {
-  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  const gladys = createFakeGladys();
+  const handler = new TelegramHandler(gladys, FakeTelegramBot);
   const sending = handler.sendMessage('1234', { text: 'Gladys started', file: null });
-  await handler.connect('token');
-  handler.markStarted();
+  await handler.startFromConfig({ telegram_api_token: 'token' });
   await sending;
   assert.equal(FakeTelegramBot.last.sentMessages.length, 1);
   assert.equal(FakeTelegramBot.last.sentMessages[0].text, 'Gladys started');
 });
 
+test('messages held during the start are sent one after the other, in order', async () => {
+  class SlowFirstSendBot extends FakeTelegramBot {
+    async sendMessage(chatId, text, options) {
+      if (this.sentMessages.length === 0 && !this.slowed) {
+        this.slowed = true;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      return super.sendMessage(chatId, text, options);
+    }
+  }
+  const handler = new TelegramHandler(createFakeGladys(), SlowFirstSendBot);
+  const first = handler.sendMessage('1234', { text: 'Gladys was upgraded', file: null });
+  const second = handler.sendMessage('1234', { text: 'Release notes', file: null });
+  await handler.startFromConfig({ telegram_api_token: 'token' });
+  await Promise.all([first, second]);
+  assert.deepEqual(
+    FakeTelegramBot.last.sentMessages.map((sent) => sent.text),
+    ['Gladys was upgraded', 'Release notes'],
+  );
+});
+
+test('a failed send does not block the next message to the same contact', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  await handler.startFromConfig({ telegram_api_token: 'token' });
+  const bot = FakeTelegramBot.last;
+  const recordMessage = bot.sendMessage.bind(bot);
+  bot.sendMessage = async (chatId, text, options) => {
+    if (text === 'one') {
+      throw new Error('EFATAL: socket hang up');
+    }
+    return recordMessage(chatId, text, options);
+  };
+  const first = handler.sendMessage('1234', { text: 'one', file: null });
+  const second = handler.sendMessage('1234', { text: 'two', file: null });
+  await assert.rejects(() => first, /socket hang up/);
+  await second;
+  assert.deepEqual(
+    bot.sentMessages.map((sent) => sent.text),
+    ['two'],
+  );
+});
+
 test('sendMessage throws when the bot did not come up at startup', async () => {
   const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
   const sending = handler.sendMessage('1234', { text: 'hi', file: null });
-  handler.markStarted();
+  await handler.startFromConfig({ telegram_api_token: '' });
   await assert.rejects(() => sending, /not connected/);
+});
+
+test('sendMessage gives up when the bot does not start in time', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot, { sendDeadlineMs: 20 });
+  await assert.rejects(
+    () => handler.sendMessage('1234', { text: 'Door opened', file: null }),
+    /not connected/,
+  );
+  // A start that comes later never delivers the message Gladys gave up on.
+  await handler.startFromConfig({ telegram_api_token: 'token' });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(FakeTelegramBot.last.sentMessages.length, 0);
+});
+
+test('a message held at boot goes out when Telegram is unreachable at first', async () => {
+  class UnreachableBot extends FakeTelegramBot {
+    async getMe() {
+      const error = new Error('EFATAL: getaddrinfo ENOTFOUND api.telegram.org');
+      error.code = 'EFATAL';
+      throw error;
+    }
+  }
+  const gladys = createFakeGladys();
+  const handler = new TelegramHandler(gladys, UnreachableBot);
+  const sending = handler.sendMessage('1234', { text: 'Gladys started', file: null });
+  await handler.startFromConfig({ telegram_api_token: 'token' });
+  await sending;
+  assert.equal(FakeTelegramBot.last.sentMessages.length, 1);
+  assert.equal(gladys.connectionStatuses[0].connected, false);
+  assert.match(gladys.connectionStatuses[0].message.en, /Cannot reach Telegram/);
+  await handler.stop();
+});
+
+test('a rejected token at startup stops the bot and reports it', async () => {
+  class RejectingBot extends FakeTelegramBot {
+    async getMe() {
+      throw telegramError(401, 'Unauthorized');
+    }
+  }
+  const gladys = createFakeGladys();
+  const handler = new TelegramHandler(gladys, RejectingBot);
+  await handler.startFromConfig({ telegram_api_token: 'bad-token' });
+  assert.equal(handler.bot, null);
+  assert.equal(handler.retryTimer, null);
+  assert.match(gladys.connectionStatuses[0].message.en, /rejected the bot token/);
 });
 
 test('sendMessage throws when the bot is not connected', async () => {
   const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
-  handler.markStarted();
+  await handler.startFromConfig({});
   await assert.rejects(
     () => handler.sendMessage('1234', { text: 'hi', file: null }),
     /not connected/,

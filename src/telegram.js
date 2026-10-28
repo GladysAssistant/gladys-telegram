@@ -17,7 +17,9 @@
 // service).
 // -----------------------------------------------------------------------------
 
+import { EventEmitter } from 'node:events';
 import { createLogger } from '@gladysassistant/integration-sdk';
+import { normalizeConfig } from './config.js';
 import { linkedMessage, notLinkedMessage, invalidCodeMessage } from './messages.js';
 import { markdownToTelegramHtml } from './markdown.js';
 
@@ -31,6 +33,31 @@ const LINK_CODE_REGEX = /^[abcdefghjkmnpqrstuvwxyz23456789]{8}$/i;
 // Outgoing images arrive as `image/jpg;base64,....` (or another subtype):
 // Telegram wants the raw bytes.
 const BASE64_IMAGE_PREFIX_REGEX = /^image\/[a-z]+;base64,/;
+
+// How long a message from Gladys may wait for the bot (at boot, the bot is
+// started only after Gladys already relays messages) or for the previous
+// message to the same contact. Gladys counts a `message.send` as failed when
+// it is not acked within 5 s: past this budget the message is rejected rather
+// than delivered after Gladys gave up on it.
+const SEND_DEADLINE_MS = 3000;
+
+// When Telegram cannot be reached, how long before checking the bot again.
+const RETRY_DELAY_MS = 60 * 1000;
+
+export const MISSING_TOKEN_STATUS = {
+  en: 'No Telegram bot token configured. Create a bot with @BotFather and paste its token here.',
+  fr: 'Aucun token de bot Telegram configuré. Créez un bot avec @BotFather et collez son token ici.',
+};
+
+const INVALID_TOKEN_STATUS = {
+  en: 'Telegram rejected the bot token. Check it in the configuration.',
+  fr: 'Telegram a refusé le token du bot. Vérifiez-le dans la configuration.',
+};
+
+const UNREACHABLE_STATUS = {
+  en: 'Cannot reach Telegram right now. The integration retries every minute.',
+  fr: "Impossible de joindre Telegram pour le moment. L'intégration réessaie chaque minute.",
+};
 
 /**
  * Whether Telegram itself rejected the request (400 Bad Request), which is
@@ -60,25 +87,102 @@ export class TelegramHandler {
   /**
    * @param {object} gladys - The GladysIntegration instance.
    * @param {Function} TelegramBotApi - The node-telegram-bot-api constructor.
+   * @param {object} [options] - Delays, shortened by the tests.
+   * @param {number} [options.sendDeadlineMs] - See SEND_DEADLINE_MS.
+   * @param {number} [options.retryDelayMs] - See RETRY_DELAY_MS.
    */
-  constructor(gladys, TelegramBotApi) {
+  constructor(
+    gladys,
+    TelegramBotApi,
+    { sendDeadlineMs = SEND_DEADLINE_MS, retryDelayMs = RETRY_DELAY_MS } = {},
+  ) {
     this.gladys = gladys;
     this.TelegramBotApi = TelegramBotApi;
+    this.sendDeadlineMs = sendDeadlineMs;
+    this.retryDelayMs = retryDelayMs;
     this.bot = null;
     this.token = null;
-    // Settled by markStarted() once the first start from the configuration
-    // is over, whatever its outcome (see sendMessage).
-    this.firstStart = new Promise((resolve) => {
-      this.resolveFirstStart = resolve;
-    });
+    this.retryTimer = null;
+    // Start tracking, so sendMessage can wait for a bot about to come up
+    // instead of failing: no start has finished yet at boot, and a start
+    // may be under way.
+    this.hasStarted = false;
+    this.startsInFlight = 0;
+    this.startEvents = new EventEmitter();
+    // Contact id -> last delivery queued for that contact.
+    this.deliveries = new Map();
   }
 
   /**
-   * Signal that the first start of the bot from the configuration is over:
-   * the bot is up, or it will not come up (no token, token refused).
+   * (Re)start the bot from the configuration and report the
+   * application-level status shown in the Configuration screen.
+   * @param {Record<string, unknown>} rawConfig - The integration configuration.
    */
-  markStarted() {
-    this.resolveFirstStart();
+  async startFromConfig(rawConfig) {
+    this.startsInFlight += 1;
+    try {
+      await this.applyConfig(normalizeConfig(rawConfig));
+    } finally {
+      this.startsInFlight -= 1;
+      this.hasStarted = true;
+      this.startEvents.emit('settled');
+    }
+  }
+
+  /**
+   * @param {{ telegram_api_token: string }} config - The normalized configuration.
+   */
+  async applyConfig(config) {
+    this.cancelRetry();
+    if (!config.telegram_api_token) {
+      await this.disconnect();
+      await this.gladys.setConnectionStatus(false, MISSING_TOKEN_STATUS);
+      return;
+    }
+    try {
+      await this.connect(config.telegram_api_token);
+      // getMe() validates the token right away, instead of waiting for the
+      // polling loop to fail in the background.
+      const username = await this.getBotUsername();
+      logger.info(`Telegram bot @${username} is up`);
+      await this.gladys.setConnectionStatus(true);
+    } catch (err) {
+      if (isTokenRejected(err)) {
+        logger.error('Telegram rejected the bot token', err);
+        await this.disconnect();
+        await this.gladys.setConnectionStatus(false, INVALID_TOKEN_STATUS);
+        return;
+      }
+      // Network down, DNS, Telegram 5xx/429: the token may well be valid. Keep
+      // the polling loop (it retries on its own, and messages still go out
+      // once the network is back) and check again later.
+      logger.warn('Could not reach Telegram, retrying in a minute', err);
+      this.scheduleRetry();
+      await this.gladys.setConnectionStatus(false, UNREACHABLE_STATUS);
+    }
+  }
+
+  // Check the bot again later, when Telegram could not be reached: the status
+  // would otherwise stay on "unreachable" even after the network is back.
+  scheduleRetry() {
+    this.cancelRetry();
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = null;
+      this.startFromConfig(this.gladys.config).catch((err) => {
+        logger.error('Telegram bot retry failed', err);
+      });
+    }, this.retryDelayMs);
+  }
+
+  cancelRetry() {
+    clearTimeout(this.retryTimer);
+    this.retryTimer = null;
+  }
+
+  /** Stop the bot for good (shutdown): no retry, no polling loop. */
+  async stop() {
+    this.cancelRetry();
+    await this.disconnect();
   }
 
   /**
@@ -105,12 +209,7 @@ export class TelegramHandler {
       // again, stop hammering the API and surface the problem in the UI.
       if (isTokenRejected(e)) {
         await this.disconnect();
-        await this.gladys
-          .setConnectionStatus(false, {
-            en: 'Telegram rejected the bot token. Check it in the configuration.',
-            fr: 'Telegram a refusé le token du bot. Vérifiez-le dans la configuration.',
-          })
-          .catch(() => {});
+        await this.gladys.setConnectionStatus(false, INVALID_TOKEN_STATUS).catch(() => {});
       }
     });
     this.bot.on('message', (msg) => {
@@ -237,15 +336,70 @@ export class TelegramHandler {
    * @param {{ text: string, file: string | null }} message - The message.
    */
   async sendMessage(contactId, message) {
+    // The budget starts when Gladys hands the message over, see SEND_DEADLINE_MS.
+    const deadline = Date.now() + this.sendDeadlineMs;
+    // One message at a time per contact, in the order Gladys sent them: the
+    // messages held at boot are all released together once the bot is up, and
+    // sending them in parallel lets Telegram deliver them out of order.
+    const previous = this.deliveries.get(contactId) ?? Promise.resolve();
+    const delivery = previous.then(() => this.deliver(contactId, message, deadline));
+    const settled = delivery.catch(() => {});
+    this.deliveries.set(contactId, settled);
+    settled.then(() => {
+      if (this.deliveries.get(contactId) === settled) {
+        this.deliveries.delete(contactId);
+      }
+    });
+    return delivery;
+  }
+
+  /**
+   * Wait until the bot is up, as long as a start may still bring it up.
+   * Once the bot is down for good (no token, token rejected), fail at once.
+   * @param {number} deadline - Timestamp after which to stop waiting.
+   */
+  async waitForBot(deadline) {
     // At boot Gladys relays the pending notifications (the "Gladys starts"
     // scenes, the upgrade message) as soon as the container authenticates on
-    // the WebSocket, before the 'connected' handler has started the bot: wait
-    // for that first start instead of losing them.
-    if (!this.bot) {
-      await this.firstStart;
+    // the WebSocket, before the 'connected' handler has started the bot.
+    while (!this.bot && (!this.hasStarted || this.startsInFlight > 0)) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        break;
+      }
+      await this.nextStartSettled(remaining);
     }
     if (!this.bot) {
       throw new Error('Telegram bot is not connected');
+    }
+  }
+
+  /**
+   * Resolve when a start finishes, or after `ms`, whichever comes first.
+   * @param {number} ms - The longest wait.
+   */
+  nextStartSettled(ms) {
+    return new Promise((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        this.startEvents.off('settled', done);
+        resolve();
+      };
+      const timer = setTimeout(done, ms);
+      this.startEvents.once('settled', done);
+    });
+  }
+
+  /**
+   * Send one message to Telegram, once its turn has come.
+   * @param {string} contactId - The Telegram chat id.
+   * @param {{ text: string, file: string | null }} message - The message.
+   * @param {number} deadline - Timestamp after which Gladys counts it as failed.
+   */
+  async deliver(contactId, message, deadline) {
+    await this.waitForBot(deadline);
+    if (Date.now() > deadline) {
+      throw new Error('Telegram message not sent in time: Gladys counts it as failed');
     }
     logger.debug(`Sending Telegram message to contact ${contactId}`);
     if (message.text) {
