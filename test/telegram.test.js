@@ -233,8 +233,26 @@ test('sendMessage sends no text message when the message carries only an image',
   assert.equal(bot.sentPhotos.length, 1);
 });
 
+test('sendMessage waits for the first start of the bot', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  const sending = handler.sendMessage('1234', { text: 'Gladys started', file: null });
+  await handler.connect('token');
+  handler.markStarted();
+  await sending;
+  assert.equal(FakeTelegramBot.last.sentMessages.length, 1);
+  assert.equal(FakeTelegramBot.last.sentMessages[0].text, 'Gladys started');
+});
+
+test('sendMessage throws when the bot did not come up at startup', async () => {
+  const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  const sending = handler.sendMessage('1234', { text: 'hi', file: null });
+  handler.markStarted();
+  await assert.rejects(() => sending, /not connected/);
+});
+
 test('sendMessage throws when the bot is not connected', async () => {
   const handler = new TelegramHandler(createFakeGladys(), FakeTelegramBot);
+  handler.markStarted();
   await assert.rejects(
     () => handler.sendMessage('1234', { text: 'hi', file: null }),
     /not connected/,

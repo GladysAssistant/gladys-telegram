@@ -98,6 +98,8 @@ gladys.on('connected', async () => {
   } catch (err) {
     logger.error('Post-connection initialization failed', err);
   }
+  // release the messages Gladys relayed while the bot was starting
+  telegram.markStarted();
 });
 
 // --- Graceful shutdown -------------------------------------------------------

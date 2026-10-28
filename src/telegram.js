@@ -55,6 +55,19 @@ export class TelegramHandler {
     this.TelegramBotApi = TelegramBotApi;
     this.bot = null;
     this.token = null;
+    // Settled by markStarted() once the first start from the configuration
+    // is over, whatever its outcome (see sendMessage).
+    this.firstStart = new Promise((resolve) => {
+      this.resolveFirstStart = resolve;
+    });
+  }
+
+  /**
+   * Signal that the first start of the bot from the configuration is over:
+   * the bot is up, or it will not come up (no token, token refused).
+   */
+  markStarted() {
+    this.resolveFirstStart();
   }
 
   /**
@@ -201,6 +214,13 @@ export class TelegramHandler {
    * @param {{ text: string, file: string | null }} message - The message.
    */
   async sendMessage(contactId, message) {
+    // At boot Gladys relays the pending notifications (the "Gladys starts"
+    // scenes, the upgrade message) as soon as the container authenticates on
+    // the WebSocket, before the 'connected' handler has started the bot: wait
+    // for that first start instead of losing them.
+    if (!this.bot) {
+      await this.firstStart;
+    }
     if (!this.bot) {
       throw new Error('Telegram bot is not connected');
     }
