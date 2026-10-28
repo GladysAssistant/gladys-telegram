@@ -1,10 +1,10 @@
 # Telegram
 
+## Overview
+
 Chat with Gladys from Telegram: ask questions about your home, trigger your
 scenes, and receive the notifications Gladys sends you — all from the Telegram
 app on your phone or computer.
-
-## Overview
 
 This integration runs **your own** Telegram bot. Nothing goes through a shared
 Gladys bot: you create the bot with Telegram's official `@BotFather`, and the
@@ -17,10 +17,16 @@ sends them, come back in the same Telegram conversation.
 
 ## Prerequisites
 
+- Gladys 4.86 or later.
 - A Telegram account.
 - A bot created with `@BotFather` (free, takes a minute — see below).
+- Internet access from the machine running Gladys to the Telegram API. The
+  integration fetches the messages of the bot itself (long polling): there is
+  no port to open on your router.
 
-## Create your bot
+## Configuration
+
+### Create your bot
 
 1. In Telegram, open a conversation with [`@BotFather`](https://t.me/BotFather).
 2. Send `/newbot`.
@@ -35,7 +41,7 @@ avatar, `/setdescription` for the text shown before the first message, and
 `/setprivacy` (privacy stays enabled — this integration only answers in
 one-to-one conversations anyway).
 
-## Configuration
+### Connect the bot to Gladys
 
 1. Open the **Configuration** tab of the Telegram integration in Gladys.
 2. Paste the token from `@BotFather` in the **Telegram bot token** field, and
@@ -46,7 +52,7 @@ one-to-one conversations anyway).
 The connection status shown on the screen reflects the real state of the bot:
 if Telegram refuses the token, it says so instead of failing silently.
 
-## Link your Telegram account
+### Link your Telegram account
 
 Each Gladys user links their own Telegram account, and only linked accounts
 can talk to Gladys:
@@ -68,6 +74,21 @@ Configuration tab, then click **Test the bot token**. A revoked or mistyped
 token is the usual cause; generate a new one with `/token` in `@BotFather` and
 paste it again.
 
+**"No Telegram bot token configured".** The connection status says so as long
+as the **Telegram bot token** field is empty: paste the token from
+`@BotFather` and save.
+
+**"Telegram rejected the bot token".** Telegram refuses the token (mistyped,
+revoked, or bot deleted), and the integration stops polling. Generate a new
+token with `/token` in `@BotFather`, paste it and save: the bot restarts with
+the new token.
+
+**"Cannot reach Telegram right now".** Gladys could not reach the Telegram
+servers (internet or DNS down, Telegram unavailable), so the token was not
+checked. The token is kept and the integration checks again every minute: the
+status turns green on its own once Telegram is reachable. Do not generate a new
+token for this; check the internet connection of the Gladys host instead.
+
 **"Your Telegram account is not linked yet".** The message means the bot does
 not know your Telegram account: generate a fresh code from Gladys and send it
 to the bot. Codes expire after 15 minutes and only work once.
@@ -83,5 +104,6 @@ answers in one-to-one conversations.
 single client at a time. Using the same token in two Gladys instances makes
 both of them miss messages: create a second bot instead.
 
-For anything else, open the integration logs from the Gladys UI: the
-integration logs what it does, and `LOG_LEVEL=debug` gives the full detail.
+For anything else, open the integration logs from the Gladys UI (the **Logs**
+of the integration, on its page): the integration logs what it does, and
+`LOG_LEVEL=debug` gives the full detail.

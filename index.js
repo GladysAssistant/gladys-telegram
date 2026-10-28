@@ -18,7 +18,7 @@ import './src/env.js';
 import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
 import TelegramBotApi from 'node-telegram-bot-api';
 import { normalizeConfig } from './src/config.js';
-import { TelegramHandler } from './src/telegram.js';
+import { TelegramHandler, isTokenRejected } from './src/telegram.js';
 
 const gladys = new GladysIntegration();
 const telegram = new TelegramHandler(gladys, TelegramBotApi);
@@ -33,9 +33,35 @@ const INVALID_TOKEN_STATUS = {
   fr: 'Telegram a refusé le token du bot. Vérifiez-le dans la configuration.',
 };
 
+const UNREACHABLE_STATUS = {
+  en: 'Cannot reach Telegram right now. The integration retries every minute.',
+  fr: "Impossible de joindre Telegram pour le moment. L'intégration réessaie chaque minute.",
+};
+
+const RETRY_DELAY_MS = 60 * 1000;
+let retryTimer = null;
+
+function cancelRetry() {
+  clearTimeout(retryTimer);
+  retryTimer = null;
+}
+
+// Check the bot again later, when Telegram could not be reached: the status
+// would otherwise stay on "unreachable" even after the network is back.
+function scheduleRetry() {
+  cancelRetry();
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    startFromConfig(gladys.config).catch((err) => {
+      logger.error('Telegram bot retry failed', err);
+    });
+  }, RETRY_DELAY_MS);
+}
+
 // (Re)start the bot from the current configuration and report the
 // application-level status shown in the Configuration screen.
 async function startFromConfig(rawConfig) {
+  cancelRetry();
   const config = normalizeConfig(rawConfig);
   if (!config.telegram_api_token) {
     await telegram.disconnect();
@@ -50,9 +76,17 @@ async function startFromConfig(rawConfig) {
     logger.info(`Telegram bot @${username} is up`);
     await gladys.setConnectionStatus(true);
   } catch (err) {
-    logger.error('Failed to start the Telegram bot', err);
-    await telegram.disconnect();
-    await gladys.setConnectionStatus(false, INVALID_TOKEN_STATUS);
+    if (isTokenRejected(err)) {
+      logger.error('Telegram rejected the bot token', err);
+      await telegram.disconnect();
+      await gladys.setConnectionStatus(false, INVALID_TOKEN_STATUS);
+      return;
+    }
+    // Network down, DNS, Telegram 5xx/429: the token may well be valid. Keep
+    // the polling loop (it retries on its own) and check again later.
+    logger.warn('Could not reach Telegram, retrying in a minute', err);
+    scheduleRetry();
+    await gladys.setConnectionStatus(false, UNREACHABLE_STATUS);
   }
 }
 
@@ -80,8 +114,9 @@ gladys.onAction('test_connection', async () => {
   if (!config.telegram_api_token) {
     return MISSING_TOKEN_STATUS;
   }
-  await telegram.connect(config.telegram_api_token);
-  const username = await telegram.getBotUsername();
+  // Checked with a separate client: the test never restarts nor stops the
+  // running bot.
+  const username = await telegram.checkToken(config.telegram_api_token);
   return {
     en: `Token valid: the bot @${username} is reachable.`,
     fr: `Token valide : le bot @${username} est joignable.`,
@@ -105,6 +140,7 @@ gladys.on('connected', async () => {
 // --- Graceful shutdown -------------------------------------------------------
 gladys.handleShutdown(async (signal) => {
   logger.info(`Received ${signal} -> graceful shutdown`);
+  cancelRetry();
   await telegram.disconnect();
 });
 
